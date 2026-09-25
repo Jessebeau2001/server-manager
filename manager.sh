@@ -138,6 +138,34 @@ session_await_exit() {
     return 0 # success
 }
 
+session_ensure_closed() {
+    if session_is_found; then
+        if ! prompt_yn "Server is running, stop the server and continue?"; then
+            return 1 # False - action aborted
+        fi
+
+        log "Stopping server..."
+        session_stop
+
+        if ! session_await_exit; then
+            log "Could not stop server."
+            return 1 # False - action failed
+        fi
+    fi
+
+    return 0 # Session was or is stopped
+}
+
+session_prompt_restart() {
+    local message="$1 Do you want to restart the session?"
+    if prompt_yn "$message"; then
+        server_start
+        return 0 # Restarted
+    else
+        return 1 # Ignored
+    fi
+}
+
 # ==============================================================================
 # COMMANDS
 # ==============================================================================
@@ -182,35 +210,24 @@ server_stop() {
 }
 
 server_update() {
-    if session_is_found; then
-        if ! prompt_yn "Server is running, stop the server and continue?"; then
-            die "Update aborted."
-        fi
-
-        log "Stoppign server..."
-        session_stop
-
-        if ! session_await_exit; then
-            die "Could not stop server. Update aborted"
-        fi
+    if ! session_ensure_closed; then
+        die "Update cancelled."
     fi
 
     log "Updating server..."
     module_update
 
-    if prompt_yn "Update complete. Do you want to restart the session?"; then
-        server_start
-    fi
+    session_prompt_restart "Update complete."
 }
 
 server_backup_save() {
-    if session_is_found; then
-        die "Cannot make backup while server is running."
-    fi
-
     # Make sure the directories exist
     require_dir "$SAVE_DIR" "Cannot find world save directory."
     require_dir "$BACKUP_DIR" "Cannot find backup directory."
+
+    if ! session_ensure_closed; then
+        die "Backup cancelled."
+    fi
 
     # Generate filename for the backup
     local out_file=$(generate_backup_name)
@@ -225,7 +242,7 @@ server_backup_save() {
     # Notify user of result
     if [ $status -eq 0 ]; then
         local elapsed_ms=$(((end_ns - start_ns) / 1000000 ))
-        log "Backup finished. Took ${elapsed_ms}ms"
+        session_prompt_restart "Backup complete in ${elapsed_ms}ms."
     else
         die "Error: Backup failed for an unexpected reason."
         return 1
