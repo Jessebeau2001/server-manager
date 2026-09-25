@@ -27,7 +27,6 @@ prompt_yn() {
 }
 
 is_file() {
-    path=$1                     # The path to check for
     [ -f "$1" ] && [ -r "$1" ]  # Returns whether the path is regular file & and readable
 }
 
@@ -36,16 +35,16 @@ is_fn() {
 }
 
 require_dir() {
-    path="$1"
-    message="$2"
+    local path="$1"
+    local message="$2"
     if [ ! -d "$path" ]; then
         die "$message: '$path'"
     fi
 }
 
 require_file() {
-    path="$1"
-    message="$2"
+    local path="$1"
+    local message="$2"
     if ! is_file "$path"; then
         die "$message: '$path'"
     fi
@@ -71,14 +70,14 @@ generate_backup_name() {
 # ==============================================================================
 # MODULE FUNCTIONS
 # ==============================================================================
-load_module() {
-    module_path="${MODULE_DIR}/${module}.sh"
+module_load() {
+    local module_path="${MODULE_DIR}/${g_module}.sh"
 
     echo "Loading ${module_path}..."
 
     # POSIX source dot notation instead of bash source
     if ! . "$module_path"; then
-        die "Failed to load module '$module'."
+        die "Failed to load module '$g_module'."
     fi
 
     # Check server name explicityly
@@ -89,19 +88,19 @@ load_module() {
 
     for fn in "module_update"; do
         if ! is_fn "$fn"; then
-            die "Module '$module' is missing required function: $fn()"
+            die "Module '$g_module' is missing required function: $fn()"
         fi
     done
 
     # Set global session name
-    SESSION_NAME="${SERVER_NAME}-managed-server"
+    g_session_name="${SERVER_NAME}-managed-server"
 }
 
 # ==============================================================================
 # SESSION FUNCTIONS
 # ==============================================================================
 session_is_found() {
-    if screen -list | grep -q "$SESSION_NAME"; then
+    if screen -list | grep -q "$g_session_name"; then
         return 0 # True
     else
         return 1 # False
@@ -110,7 +109,7 @@ session_is_found() {
 
 # Send raw characters
 session_stuff() {
-    screen -S "$SESSION_NAME" -X stuff "$1"
+    screen -S "$g_session_name" -X stuff "$1"
 }
 
 # Execute a command in the session shell
@@ -124,7 +123,7 @@ session_stop() {
 }
 
 session_await_exit() {
-    timeout=20 # Timeout duration in seconds
+    local timeout=20 # Timeout duration in seconds
 
     while session_is_found; do
         if [ ! "$timeout" -gt 0 ]; then # Timeout after n cycles
@@ -174,15 +173,15 @@ server_start() {
     require_file "${SERVER_DIR}/${SERVER_ENTRYPOINT}" "Could not find server entrypoint"
 
     if session_is_found; then
-        die "Cannot start server \"$SESSION_NAME\", session already exists"
+        die "Cannot start server \"$g_session_name\", session already exists"
     fi
 
-    log "Starting server session '$SESSION_NAME'..."
+    log "Starting server session '$g_session_name'..."
 
     (   # Use subshell so cd doesn't mess with main process
         cd "$SERVER_DIR" || exit 1
-        # screen -L -Logfile tmp.txt -dmS "$SESSION_NAME" "${SERVER_ENTRYPOINT}"
-        screen -dmS "$SESSION_NAME" "${SERVER_ENTRYPOINT}"
+        # screen -L -Logfile tmp.txt -dmS "$g_session_name" "${SERVER_ENTRYPOINT}"
+        screen -dmS "$g_session_name" "${SERVER_ENTRYPOINT}"
     )
 
     if session_is_found; then
@@ -195,10 +194,10 @@ server_start() {
 
 server_stop() {
     if ! session_is_found; then
-        die "No active session found for \"$SESSION_NAME\""
+        die "No active session found for \"$g_session_name\""
     fi
     
-    log "Attempting to stop session \"$SESSION_NAME\"..."
+    log "Attempting to stop session \"$g_session_name\"..."
     
     session_stop
 
@@ -250,7 +249,7 @@ server_backup_save() {
 }
 
 show_help() {
-    echo "Usage: $0 {module} {start|stop|backup|update}"
+    echo "Usage: $0 {g_module} {start|stop|backup|update}"
 }
 
 # ==============================================================================
@@ -258,23 +257,25 @@ show_help() {
 # ==============================================================================
 
 # Constants
-MODULE_DIR="modules"
-SESSION_NAME="" # Filled by module
+readonly MODULE_DIR="modules"
+
+# Globals
+g_session_name="" # Filled by module_load
 
 # Program args
-module=$1   # What module to load
-command=$2  # What command to execute
+g_module=$1   # What module to load
+g_command=$2  # What command to execute
 
 # Command unspecified, exit
-if [ -z "$command" ]; then
+if [ -z "$g_command" ]; then
     show_help
     exit 1
 fi
 
 # Attempt to load the module or fail
-load_module
+module_load
 
-case "$command" in
+case "$g_command" in
     start)
         server_start
         ;;
