@@ -1,10 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 
 # ==============================================================================
 # HELPER FUNCTIONS
 # ==============================================================================
 log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+    # echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+    echo "$1"
 }
 
 echerr() {
@@ -14,6 +15,15 @@ echerr() {
 die() {
     echerr "$1"
     exit 1
+}
+
+prompt_yn() {
+    local message="$1"
+    local response
+
+    read -r -p "${message} [y/n]: " response
+
+    [[ "$response" == [Yy] ]] # Returns true if Y or y
 }
 
 is_file() {
@@ -109,7 +119,7 @@ session_exec() {
 }
 
 # Send SIGINT (Ctrl+C) to session
-session_sigint() {
+session_stop() {
     session_stuff "^C"
 }
 
@@ -162,7 +172,7 @@ server_stop() {
     
     log "Attempting to stop session \"$SESSION_NAME\"..."
     
-    session_sigint
+    session_stop
 
     if session_await_exit; then
         log "Server was stopped..."
@@ -172,8 +182,25 @@ server_stop() {
 }
 
 server_update() {
+    if session_is_found; then
+        if ! prompt_yn "Server is running, stop the server and continue?"; then
+            die "Update aborted."
+        fi
+
+        log "Stoppign server..."
+        session_stop
+
+        if ! session_await_exit; then
+            die "Could not stop server. Update aborted"
+        fi
+    fi
+
     log "Updating server..."
     module_update
+
+    if prompt_yn "Update complete. Do you want to restart the session?"; then
+        server_start
+    fi
 }
 
 server_backup_save() {
